@@ -14,6 +14,7 @@ ADD . /cfrpki
 WORKDIR /cfrpki
 ADD fuzzers/fuzz_decodecert.go ./fuzzers/
 WORKDIR ./fuzzers/
+RUN go mod init myfuzz
 RUN go install github.com/dvyukov/go-fuzz/go-fuzz@latest github.com/dvyukov/go-fuzz/go-fuzz-build@latest
 RUN go get github.com/dvyukov/go-fuzz/go-fuzz-dep
 RUN go get github.com/cloudflare/cfrpki
