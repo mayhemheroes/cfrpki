@@ -1,0 +1,6 @@
+project: cfrpki
+target: cfrpki
+
+cmds:
+  - cmd: /fuzz_decodecert
+    env: {}

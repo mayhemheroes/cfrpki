@@ -1,29 +1,28 @@
-ARG src_dir="/octorpki"
+FROM ubuntu:20.04 as builder
 
-FROM golang:alpine as builder
-ARG src_dir
-ARG LDFLAGS=""
+RUN ln -snf /usr/share/zoneinfo/$CONTAINER_TIMEZONE /etc/localtime && echo $CONTAINER_TIMEZONE > /etc/timezone
 
-RUN apk --update --no-cache add git && \
-    mkdir -p ${src_dir}
+RUN DEBIAN_FRONTEND=noninteractive \
+	apt-get update && apt-get install -y build-essential tzdata pkg-config \
+	wget clang git
 
-WORKDIR ${src_dir}
-COPY . .
+RUN wget https://go.dev/dl/go1.19.1.linux-amd64.tar.gz
+RUN rm -rf /usr/local/go && tar -C /usr/local -xzf go1.19.1.linux-amd64.tar.gz
+ENV PATH=$PATH:/usr/local/go/bin
 
-RUN go build -ldflags "${LDFLAGS}" cmd/octorpki/octorpki.go
+ADD . /cfrpki
+WORKDIR /cfrpki
+ADD fuzzers/fuzz_decodecert.go ./fuzzers/
+WORKDIR ./fuzzers/
+RUN go mod init myfuzz
+RUN go install github.com/dvyukov/go-fuzz/go-fuzz@latest github.com/dvyukov/go-fuzz/go-fuzz-build@latest
+RUN go get github.com/dvyukov/go-fuzz/go-fuzz-dep
+RUN go get github.com/cloudflare/cfrpki
+RUN /root/go/bin/go-fuzz-build -libfuzzer -o harness.a
+RUN clang -fsanitize=fuzzer harness.a -o fuzz_decodecert
 
-FROM alpine:latest
-ARG src_dir
+FROM ubuntu:20.04
+COPY --from=builder /cfrpki/fuzzers/fuzz_decodecert /
 
-RUN apk --update --no-cache add ca-certificates rsync && \
-    adduser -S -D -H -h / rpki && \
-    mkdir /cache && chmod 770 /cache && chown rpki:root /cache && \
-    touch rrdp.json && chown rpki rrdp.json
-USER rpki
-
-COPY --from=builder ${src_dir}/octorpki ${src_dir}/cmd/octorpki/private.pem /
-COPY --from=builder ${src_dir}/cmd/octorpki/tals /tals
-
-VOLUME ["/cache"]
-
-ENTRYPOINT ["./octorpki"]
+ENTRYPOINT []
+CMD ["/fuzz_decodecert"]
